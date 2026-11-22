@@ -1,0 +1,12 @@
+# Optional E1 experiment. Both input conditions use the same model.
+model:
+  architecture: siamese_resnet18
+  encoder_weights: imagenet
+  num_classes: 4
+
+experiment:
+  id: E1
+  evaluate_on: validation
+  input_conditions:
+    - [post_rgb, post_rgb]
+    - [pre_rgb, post_rgb]

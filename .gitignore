@@ -1,0 +1,22 @@
+# Python
+.venv/
+.venv-ml/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Local inputs and experiment artifacts
+/data/
+/checkpoints/
+/outputs/
+/.cache/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+.env
+.env.*
+!.env.example

@@ -1,0 +1,14 @@
+model:
+  architecture: resnet18
+  encoder_weights: imagenet
+  input: post_rgb
+  num_classes: 4
+
+training:
+  crop_size: 160
+  batch_size: 4
+  loss: weighted_cross_entropy
+  class_weights:
+    method: inverse_square_root_frequency
+    maximum: 4.0
+  checkpoint_metric: validation_oracle_harmonic_damage_f1

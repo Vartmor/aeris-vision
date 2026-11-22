@@ -1,0 +1,19 @@
+dataset:
+  name: xbd
+  source_package: challenge_train
+  raw_dir: data/raw/xbd
+  manifest_path: data/processed/manifest.jsonl
+  audit_path: data/processed/audit.json
+
+split:
+  output_path: data/processed/splits.json
+  ood_event: hurricane-michael
+  id_evaluation_groups:
+    validation: [hurricane-florence_00000018]
+    calibration: [midwest-flooding_00000073]
+    test: [hurricane-matthew_00000000, hurricane-matthew_00000110]
+  id_fractions:
+    train: 0.70
+    validation: 0.10
+    calibration: 0.10
+    test: 0.10

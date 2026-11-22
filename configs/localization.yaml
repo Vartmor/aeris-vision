@@ -1,0 +1,14 @@
+model:
+  architecture: unet
+  encoder: resnet18
+  encoder_weights: imagenet
+  input: pre_rgb
+
+training:
+  crop_size: 256
+  batch_size: 2
+  loss: bce_dice
+  optimizer: adamw
+  learning_rate: 0.0001
+  amp: auto
+  checkpoint_metric: validation_localization_f1

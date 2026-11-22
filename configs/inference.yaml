@@ -1,0 +1,18 @@
+runtime:
+  backend: pytorch
+  device: cpu
+
+checkpoints:
+  localization: null  # Set after model selection.
+  damage: null
+
+evaluation:
+  match_iou_minimum: 0.5  # Inclusive.
+  merge_gt_coverage_threshold: 0.5  # Strictly greater than.
+  merge_min_buildings: 2
+
+calibration:
+  target_coverage: 0.80
+  temperature: null
+  oracle_threshold: null
+  candidate_threshold: null
