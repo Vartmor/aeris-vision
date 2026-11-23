@@ -1,0 +1,89 @@
+---
+import Base from '../layouts/Base.astro';
+import { journal, journalFigures } from '../content/journal';
+import { href } from '../lib/url';
+
+const entries = journal.filter((entry) => entry.sections.some(({ figure }) => figure));
+---
+
+<Base title="Galeri" description="Veri, eğitim ve test sonuçlarından hazırladığım grafikler.">
+  <section class="wrap journal-body gallery" aria-labelledby="gallery-title">
+    <div class="gallery-heading">
+      <h1 id="gallery-title">Deney grafikleri</h1>
+      <div class="gallery-filter" data-gallery-filter hidden>
+        <label for="gallery-entry">Yazıya göre</label>
+        <select id="gallery-entry">
+          <option value="">Tüm yazılar</option>
+          {entries.map(({ number, title }) => <option value={number}>{number}. {title}</option>)}
+        </select>
+      </div>
+    </div>
+    <p class="gallery-count" role="status" data-gallery-count>{journalFigures.length} grafik</p>
+    <div class="gallery-grid">
+      {journalFigures.map(({ entry, figure }) => {
+        const image = href(`media/gunluk/${figure.file}`);
+        return (
+          <figure class="article-figure gallery-card" data-gallery-entry={entry.number}>
+            <a class="gallery-image" href={image}>
+              <img src={image} width={figure.size?.width ?? 1008} height={figure.size?.height ?? 576}
+                   loading="lazy" decoding="async" alt={figure.alt} />
+            </a>
+            <figcaption>
+              <p>{figure.caption}</p>
+              <a href={href(`gunluk/${entry.slug}/`)}>{entry.number}. {entry.title}</a>
+            </figcaption>
+          </figure>
+        );
+      })}
+    </div>
+  </section>
+  <script>
+    const controls = document.querySelector<HTMLElement>('[data-gallery-filter]');
+    const select = document.querySelector<HTMLSelectElement>('#gallery-entry');
+    const counter = document.querySelector('[data-gallery-count]');
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-gallery-entry]'));
+    if (controls && select && counter) {
+      const apply = () => {
+        for (const card of cards) {
+          card.hidden = Boolean(select.value) && card.dataset.galleryEntry !== select.value;
+        }
+        counter.textContent = `${cards.filter((card) => !card.hidden).length} grafik`;
+      };
+      const requested = new URL(location.href).searchParams.get('yazi');
+      select.value = Array.from(select.options).find((option) => option.value === requested)?.value ?? '';
+      controls.hidden = false;
+      apply();
+      select.addEventListener('change', () => {
+        const url = new URL(location.href);
+        if (select.value) url.searchParams.set('yazi', select.value);
+        else url.searchParams.delete('yazi');
+        history.replaceState(history.state, '', url);
+        apply();
+      });
+    }
+  </script>
+</Base>
+
+<style>
+  .gallery-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+  .gallery-heading h1 { margin-bottom: 0; }
+  .gallery-filter { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; }
+  .gallery-filter[hidden] { display: none; }
+  .gallery-filter label { font-weight: 700; }
+  .gallery-filter select {
+    min-height: 44px; width: min(100%, 19rem); font: inherit; color: inherit;
+    background: #fbf5f1; border: 1px solid var(--aeris-border);
+    border-radius: var(--aeris-radius-sm); padding: 5px 10px;
+  }
+  .gallery-count { color: var(--aeris-textSecondary); margin-block: 18px 14px; }
+  .gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 30px 22px; }
+  .gallery-card { margin: 0; padding-bottom: 12px; border-bottom: 1px solid var(--aeris-border); }
+  .gallery-image { display: block; }
+  .gallery-image img { aspect-ratio: 16/9; object-fit: contain; background: #fbf5f1; }
+  .gallery-card figcaption a { display: inline-block; margin: 6px 0 0; }
+  @media (max-width: 740px) {
+    .gallery-heading { align-items: stretch; flex-direction: column; }
+    .gallery-filter select { width: 100%; }
+    .gallery-grid { grid-template-columns: minmax(0,1fr); }
+  }
+</style>

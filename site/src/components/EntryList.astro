@@ -1,0 +1,25 @@
+---
+import { href } from '../lib/url';
+import type { Entry } from '../content/journal';
+
+const { entries } = Astro.props as { entries: Entry[] };
+---
+
+<ol class="entry-list" reversed role="list">
+  {entries.map((entry) => {
+    const preview = entry.sections.find((section) => section.figure)?.figure;
+    return (
+      <li value={entry.number}>
+        <a class="entry-row" href={href(`gunluk/${entry.slug}/`)}>
+          <span class="entry-number">{entry.number}</span>
+          <div class="entry-copy">
+            <strong>{entry.title}</strong>
+            <p>{entry.intro}</p>
+          </div>
+          {preview && <img src={href(`media/gunluk/${preview.file}`)} width={preview.size?.width ?? 1008} height={preview.size?.height ?? 576}
+                           loading="lazy" decoding="async" alt="" />}
+        </a>
+      </li>
+    );
+  })}
+</ol>
