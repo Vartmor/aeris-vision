@@ -63,8 +63,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         subcommand.add_argument("--config", required=True, type=Path, help="Veri konfigürasyonu.")
         subcommand.set_defaults(handler=_split)
 
-    train = commands.add_parser("train", help="Bina lokalizasyon modelini eğit.")
-    train.add_argument("--task", required=True, choices=("localization",))
+    train = commands.add_parser("train", help="Lokalizasyon veya hasar sınıflandırma modelini eğit.")
+    train.add_argument("--task", required=True, choices=("localization", "damage"))
     train.add_argument("--config", required=True, type=Path, help="Model konfigürasyonu.")
     train.add_argument("--data-config", type=Path, default=Path("configs/data.yaml"))
     train.add_argument("--run-dir", required=True, type=Path, help="Yeni yerel koşu dizini.")
@@ -73,11 +73,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     train.add_argument("--workers", type=int, default=2)
     train.add_argument("--seed", type=int, default=2026)
     train.add_argument("--train-tiles", type=int, help="Train bölümünden seçilecek görüntü sayısı.")
+    damage_subset = train.add_mutually_exclusive_group()
+    damage_subset.add_argument("--train-buildings", type=int, help="Hasar eğitimi için seçilecek bina sayısı.")
+    damage_subset.add_argument("--max-crops-per-class", type=int, help="Hasar eğitimi için sınıf başına örnek üst sınırı.")
     train.add_argument("--thresholds", type=float, nargs="+", default=[0.5],
                        help="Validation üzerinde karşılaştırılacak bina olasılık eşikleri.")
     train.add_argument("--validation-masks", action="store_true", help="Seçilen modelin validation maskelerini yaz.")
-    train.add_argument("--cache-dir", type=Path, help="Yerel ve yeniden kullanılabilir RGB/maske önbelleği.")
-    train.add_argument("--tiny", action="store_true", help="32 eğitim yamasında overfit testi.")
+    train.add_argument("--cache-dir", type=Path, help="Yerel, yeniden kullanılabilir veri önbelleği.")
+    train.add_argument("--tiny", action="store_true", help="32 eğitim örneğiyle overfit testi.")
     train.set_defaults(handler=_train)
 
     evaluate = commands.add_parser(
@@ -89,6 +92,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     evaluate.add_argument("--targets", required=True, type=Path, help="Hedef PNG dizini.")
     evaluate.add_argument("--output", type=Path, help="JSON çıktı dosyası.")
     evaluate.set_defaults(handler=_evaluate)
+
+    pipeline = commands.add_parser("evaluate-pipeline", help="Validation üzerinde uçtan uca hattı değerlendir.")
+    pipeline.add_argument("--config", type=Path, default=Path("configs/inference.yaml"))
+    pipeline.add_argument("--data-config", type=Path, default=Path("configs/data.yaml"))
+    pipeline.add_argument("--device", choices=("auto", "cuda", "cpu"))
+    pipeline.add_argument("--output-dir", type=Path, required=True, help="Yeni yerel değerlendirme dizini.")
+    pipeline.set_defaults(handler=_evaluate_pipeline)
+
+    for name, help_text in (
+        ("calibrate", "ID kalibrasyonunda sıcaklığı ve inceleme eşiklerini dondur."),
+        ("evaluate-final", "Dondurulmuş ayarlarla ID ve OOD testini çalıştır."),
+    ):
+        evaluation = commands.add_parser(name, help=help_text)
+        evaluation.add_argument("--config", type=Path, default=Path("configs/inference.yaml"))
+        evaluation.add_argument("--data-config", type=Path, default=Path("configs/data.yaml"))
+        evaluation.add_argument("--device", choices=("auto", "cuda", "cpu"))
+        evaluation.add_argument("--output-dir", type=Path, required=True)
+        if name == "evaluate-final":
+            evaluation.add_argument("--freeze", type=Path, required=True)
+        evaluation.set_defaults(handler=_run_g4)
+
+    report = commands.add_parser("report-g4", help="G4 sonuçlarından grafikleri ve yerel hata galerisini üret.")
+    report.add_argument("--run-dir", type=Path, required=True)
+    report.add_argument("--data-config", type=Path, default=Path("configs/data.yaml"))
+    report.add_argument("--output-dir", type=Path, required=True)
+    report.set_defaults(handler=_report_g4)
+
+    infer = commands.add_parser("infer", help="Etiketsiz görüntü çiftinden bina ve hasar tahmini üret.")
+    infer.add_argument("--config", type=Path, default=Path("configs/inference.yaml"))
+    infer.add_argument("--device", choices=("auto", "cuda", "cpu"))
+    infer.add_argument("--pre", type=Path, required=True, help="Afet öncesi RGB görüntü.")
+    infer.add_argument("--post", type=Path, required=True, help="Afet sonrası RGB görüntü.")
+    infer.add_argument("--sample-id", help="JSON çıktısına yazılacak görüntü çifti kimliği.")
+    infer.add_argument("--calibration", type=Path, help="İsteğe bağlı dondurulmuş kalibrasyon kaydı.")
+    infer.add_argument("--output", type=Path, required=True, help="Yeni yerel tahmin dizini.")
+    infer.set_defaults(handler=_infer)
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -261,12 +300,25 @@ def _train(args: argparse.Namespace) -> int:
         raise ConfigError("epochs pozitif, workers sıfır veya pozitif, seed 32 bit işaretsiz olmalı.")
     if args.train_tiles is not None and args.train_tiles < 1:
         raise ConfigError("train-tiles pozitif olmalı.")
+    if args.train_buildings is not None and args.train_buildings < 1:
+        raise ConfigError("train-buildings pozitif olmalı.")
+    if args.max_crops_per_class is not None and args.max_crops_per_class < 1:
+        raise ConfigError("max-crops-per-class pozitif olmalı.")
     if not all(0 < value < 1 for value in args.thresholds):
         raise ConfigError("Olasılık eşikleri 0 ile 1 arasında olmalı.")
-    if args.tiny and (args.train_tiles is not None or args.validation_masks or args.thresholds != [0.5]):
-        raise ConfigError("Tiny testi 32 eğitim yaması ve sabit 0,5 eşikle çalışır.")
+    localization_options = args.train_tiles is not None or args.validation_masks or args.thresholds != [0.5]
+    damage_options = args.train_buildings is not None or args.max_crops_per_class is not None
+    if args.task == "localization" and damage_options:
+        raise ConfigError("train-buildings ve max-crops-per-class hasar eğitimi içindir.")
+    if args.task == "damage" and localization_options:
+        raise ConfigError("train-tiles, thresholds ve validation-masks lokalizasyon içindir.")
+    if args.tiny and (localization_options or damage_options):
+        raise ConfigError("Tiny testi sabit 32 eğitim örneğiyle çalışır.")
     try:
-        from aeris.train.localization import train_localization
+        if args.task == "damage":
+            from aeris.train.damage import train_damage as train_model
+        else:
+            from aeris.train.localization import train_localization as train_model
     except ModuleNotFoundError as error:
         if error.name not in {"torch", "torchvision"}:
             raise
@@ -274,7 +326,7 @@ def _train(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        train_localization(args)
+        train_model(args)
     except ConfigError:
         raise
     except (OSError, RuntimeError, ValueError) as error:
@@ -308,3 +360,85 @@ def _config_path(
     if not isinstance(value, str) or not value:
         raise ConfigError(f"{config}: {section_name}.{key} metin olmalı.")
     return Path(value)
+
+
+def _evaluate_pipeline(args: argparse.Namespace) -> int:
+    try:
+        from aeris.eval.pipeline import evaluate_validation
+    except ModuleNotFoundError as error:
+        if error.name not in {"torch", "torchvision"}:
+            raise
+        print("Uçtan uca değerlendirme PyTorch gerektiriyor. Ortam kaydı — docs/environment.md", file=sys.stderr)
+        return 2
+    try:
+        report = evaluate_validation(args.config, args.data_config, args.output_dir, args.device)
+    except ConfigError:
+        raise
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"Uçtan uca değerlendirme hatası — {error}", file=sys.stderr)
+        return 2
+    print(f"{report['images']} validation görüntüsü · xView2 uyumlu skor {report['predicted']['score']:.4f}")
+    print(f"Uçtan uca değerlendirme kaydedildi — {args.output_dir}")
+    return 0
+
+
+def _infer(args: argparse.Namespace) -> int:
+    try:
+        from aeris.infer.output import infer_pair
+    except ModuleNotFoundError as error:
+        if error.name not in {"torch", "torchvision"}:
+            raise
+        print("Çıkarım PyTorch gerektiriyor. Ortam kaydı — docs/environment.md", file=sys.stderr)
+        return 2
+    try:
+        report = infer_pair(
+            args.pre, args.post, args.config, args.output, device=args.device, sample_id=args.sample_id,
+            calibration_path=args.calibration,
+        )
+    except ConfigError:
+        raise
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"Çıkarım hatası — {error}", file=sys.stderr)
+        return 2
+    print(f"{len(report['buildings'])} bina adayı · {args.output / 'prediction.json'}")
+    return 0
+
+
+def _run_g4(args: argparse.Namespace) -> int:
+    try:
+        from aeris.eval.g4 import calibrate, evaluate_final
+    except ModuleNotFoundError as error:
+        if error.name not in {"torch", "torchvision"}:
+            raise
+        print("G4 değerlendirmesi PyTorch gerektiriyor. Ortam kaydı — docs/environment.md", file=sys.stderr)
+        return 2
+    try:
+        if args.command == "calibrate":
+            record = calibrate(args.config, args.data_config, args.output_dir, args.device)
+            print(f"Sıcaklık {record['temperature']:.6f} · {args.output_dir / 'freeze.json'}")
+        else:
+            evaluate_final(args.config, args.data_config, args.freeze, args.output_dir, args.device)
+            print(f"ID ve OOD sonuçları · {args.output_dir / 'final.json'}")
+    except ConfigError:
+        raise
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"G4 değerlendirme hatası — {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _report_g4(args: argparse.Namespace) -> int:
+    try:
+        from aeris.eval.g4_report import write_report
+
+        write_report(args.run_dir, args.data_config, args.output_dir)
+    except ModuleNotFoundError as error:
+        if error.name != "matplotlib":
+            raise
+        print("Grafik raporu Matplotlib gerektiriyor. Ortam kaydı — docs/g4.md", file=sys.stderr)
+        return 2
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"G4 rapor hatası — {error}", file=sys.stderr)
+        return 2
+    print(f"G4 raporu · {args.output_dir / 'index.html'}")
+    return 0

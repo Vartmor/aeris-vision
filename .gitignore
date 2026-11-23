@@ -1,6 +1,7 @@
 # Python
 .venv/
 .venv-ml/
+.venv-cpu/
 __pycache__/
 .pytest_cache/
 *.py[cod]
@@ -12,6 +13,7 @@ dist/
 /data/
 /checkpoints/
 /outputs/
+/branding/
 /.cache/
 *.pt
 *.pth

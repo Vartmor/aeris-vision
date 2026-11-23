@@ -770,13 +770,13 @@ Nihai test tablosu, risk–coverage grafiği ve hata örnekleri README ve değer
 | 24 Kasım | Olay ve sınıf desteği, sahne/mekânsal grup, aynı türden OOD olay seçimi, sızıntı denetimi ve split hash. | G0 |
 | 25 Kasım | U-Net, BCE + Dice, 20–50 yamada smoke ve tiny-overfit. Tepe VRAM, epoch süresi ve veri okuma hızı. Darboğaz ölçülürse yerel önbellek. | Çalışan eğitim döngüsü ve [donanım ölçümü](localization-smoke.md) |
 | 26 Kasım | Gerçek eğitim alt kümesiyle lokalizasyon eğitimi. Validation maskeleri, eşik seçimi, F1/IoU ve checkpoint. | [İlk bina segmentasyon modeli](localization-baseline.md) |
-| 27–28 Kasım | Ağırlıklı CE ile gerçek bina crop’larında post-only hasar eğitimi. Validation harmonik F1 ile checkpoint, confusion matrix ve ham skor kaydı. | G1–G2 |
-| 29–30 Kasım | Tahmin edilen adaylardan uçtan uca çıkarım ve xView2 maskeleri. Bire bir IoU, birleşme ve ağır hasar kategorilerinin sentetik kontrolleri. | Çalışan uçtan uca değerlendirme |
-| 1 Aralık | CLI, JSON çıktısı, CPU smoke çıkarımı ve README kurulum adımları. | Etiketsiz görüntü çiftiyle çalıştırılabilir hat |
+| 27–28 Kasım | Ağırlıklı CE ile gerçek bina crop’larında post-only hasar eğitimi. Validation harmonik F1 ile checkpoint, confusion matrix ve ham skor kaydı. | [Hasar modeli ve G1–G2 ölçümleri](damage-baseline.md) |
+| 29–30 Kasım | Tahmin edilen adaylardan uçtan uca çıkarım ve xView2 maskeleri. Bire bir IoU, birleşme ve ağır hasar kategorilerinin sentetik kontrolleri. | [Uçtan uca değerlendirme](end-to-end-validation.md) |
+| 1 Aralık | CLI, JSON çıktısı, CPU smoke çıkarımı ve README kurulum adımları. | [Etiketsiz görüntü çiftiyle çalıştırılabilir hat](../README.md#etiketsiz-görüntü-çiftinden-çıkarım) |
 | 2 Aralık | Tampon. | M0 öncesi kurtarma zamanı |
-| 3 Aralık | Validation üzerinde gerçek ve tahmin edilen bina sınırlarının kıyası. | M0 · G3 |
-| 4 Aralık | Seçilen modelle ID kalibrasyon logits ve adayları. `T`, `τ_oracle` ve `τ_candidate` belirleme, model ve değerlendirme kurallarını dondurma, nihai ID/OOD testini tek koşuda çalıştırma. | Nihai skorlar ve bina bazlı hata tablosu |
-| 5 Aralık | ID/OOD ham ve kalibre ECE/NLL, sabit eşik noktalarıyla oracle ve aday risk–coverage grafikleri. Yeterli blok varsa bootstrap, örnek hata galerisi. | G4 |
+| 3 Aralık | Validation üzerinde gerçek ve tahmin edilen bina sınırlarının kıyası. | [M0 · G3](m0.md) |
+| 4 Aralık | Seçilen modelle ID kalibrasyon logits ve adayları. `T`, `τ_oracle` ve `τ_candidate` belirleme, model ve değerlendirme kurallarını dondurma, nihai ID/OOD testini tek koşuda çalıştırma. | [Dondurulmuş skorlar ve bina hata tablosu](g4.md) |
+| 5 Aralık | ID/OOD ham ve kalibre ECE/NLL, sabit eşik noktalarıyla oracle ve aday risk–coverage grafikleri. Yeterli blok varsa bootstrap, örnek hata galerisi. | [G4 · Kalibrasyon ve risk–coverage](g4.md) |
 | 6 Aralık | Dondurulmuş PyTorch modeliyle CPU/GPU p50/p95 ve GPU tepe VRAM. Zaman kalırsa blur, JPEG ve kaydırma duyarlılığı. | Kaynak ve gecikme raporu |
 | 7–8 Aralık | Zaman kalırsa validation’da Siamese `post/post` ve `pre/post` kıyası. | İsteğe bağlı E1 |
 | 9 Aralık | Dondurulmuş post-only model, aday eşiği, maske ve inceleme işaretiyle sade yerel demo. | Çalışan demo |

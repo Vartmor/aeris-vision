@@ -12,12 +12,9 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
+from aeris.data.images import normalize_rgb
 from aeris.data.manifest import Record
 from aeris.data.targets import target_path
-
-_MEAN = torch.tensor((0.485, 0.456, 0.406)).view(3, 1, 1)
-_STD = torch.tensor((0.229, 0.224, 0.225)).view(3, 1, 1)
-
 
 @dataclass(frozen=True, slots=True)
 class Patch:
@@ -86,9 +83,7 @@ class LocalizationPatches(Dataset):
             if crop.shape != (bottom - top, right - left, 4) or crop.dtype != np.uint8:
                 raise ValueError(f"{cached}: invalid cached patch for {patch.sample_id}")
             rgb, target = crop[:, :, :3].copy(), crop[:, :, 3].copy()
-        image_tensor = torch.from_numpy(rgb).permute(2, 0, 1).float().div_(255)
-        image_tensor.sub_(_MEAN).div_(_STD)
-        return image_tensor, torch.from_numpy(target).unsqueeze(0).float()
+        return normalize_rgb(rgb), torch.from_numpy(target).unsqueeze(0).float()
 
 
 def _read_source(patch: Patch, box: tuple[int, int, int, int] | None) -> tuple[np.ndarray, np.ndarray]:

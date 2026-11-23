@@ -1,9 +1,7 @@
 """Train and measure the building-localization baseline."""
 
 import hashlib
-import json
 import math
-import subprocess
 from argparse import Namespace
 from collections import Counter
 from collections.abc import Sequence
@@ -23,10 +21,9 @@ from aeris.data.localization import (
     tile_patches,
     tiny_patches,
 )
-from aeris.data.manifest import read_manifest
 from aeris.eval.localization import localization_metrics, logit_cutoffs, write_validation_masks
 from aeris.models.localization import LocalizationUNet, bce_dice_loss
-from aeris.splits.storage import plan_from_manifest, verify_split
+from aeris.train.common import git_commit, load_training_sources, training_loader, write_run_report
 
 
 def _settings(path: Path) -> tuple[dict, dict]:
@@ -58,38 +55,6 @@ def _settings(path: Path) -> tuple[dict, dict]:
     if training.get("amp") not in ("auto", "off"):
         raise ConfigError(f"{path}: amp must be auto or off")
     return model, training
-
-
-def _sources(path: Path) -> tuple[Path, dict, dict]:
-    config = load_config(path)
-    dataset, split = config.get("dataset"), config.get("split")
-    if not isinstance(dataset, dict) or not isinstance(split, dict):
-        raise ConfigError(f"{path}: dataset and split mappings are required")
-    for section, key in (
-        (dataset, "raw_dir"), (dataset, "manifest_path"), (split, "output_path"),
-    ):
-        if not isinstance(section.get(key), str) or not section[key]:
-            raise ConfigError(f"{path}: {key} must be a nonempty path")
-    fractions = split.get("id_fractions")
-    groups = split.get("id_evaluation_groups")
-    event = split.get("ood_event")
-    if not isinstance(fractions, dict) or (groups is not None and not isinstance(groups, dict)):
-        raise ConfigError(f"{path}: invalid id_fractions or id_evaluation_groups")
-    if event is not None and (not isinstance(event, str) or not event.strip()):
-        raise ConfigError(f"{path}: ood_event must be a nonempty name or null")
-    manifest_path = Path(dataset["manifest_path"])
-    plan = plan_from_manifest(manifest_path, fractions, ood_event=event, id_evaluation_groups=groups)
-    verify_split(Path(split["output_path"]), plan)
-    records = {record["sample_id"]: record for record in read_manifest(manifest_path)}
-    return Path(dataset["raw_dir"]), records, plan
-
-
-def _loader(dataset: LocalizationPatches, batch: int, workers: int, cuda: bool, seed: int | None) -> DataLoader:
-    generator = torch.Generator().manual_seed(seed) if seed is not None else None
-    return DataLoader(
-        dataset, batch_size=batch, shuffle=seed is not None,
-        num_workers=workers, persistent_workers=workers > 0, pin_memory=cuda, generator=generator,
-    )
 
 
 def _to_device(batch, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -160,27 +125,11 @@ def evaluate_localization(
     return {"loss": total_loss.item() / len(loader.dataset), **best, "threshold_curve": curve}
 
 
-def _write_report(path: Path, report: dict) -> None:
-    pending = path.with_suffix(".tmp")
-    pending.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    pending.replace(path)
-
-
-def _git_commit() -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, check=True, text=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return None
-    return result.stdout.strip()
-
-
 def train_localization(args: Namespace) -> None:
     if args.run_dir.exists() or args.run_dir.is_symlink():
         raise FileExistsError(f"Run directory already exists: {args.run_dir}")
     model_settings, training = _settings(args.config)
-    raw, records, plan = _sources(args.data_config)
+    raw, records, plan = load_training_sources(args.data_config)
     train_rows = [records[sample] for sample in plan["partitions"]["train"]]
     if args.train_tiles is not None:
         if args.train_tiles > len(train_rows):
@@ -213,8 +162,8 @@ def train_localization(args: Namespace) -> None:
         start = perf_counter()
         cache = cache_localization_tiles(train + evaluation, args.cache_dir, plan["manifest_sha256"])
         cache_seconds = perf_counter() - start
-    train_loader = _loader(LocalizationPatches(train, cache), batch, args.workers, cuda, args.seed)
-    eval_loader = _loader(LocalizationPatches(evaluation, cache), batch, args.workers, cuda, None)
+    train_loader = training_loader(LocalizationPatches(train, cache), batch, args.workers, cuda, args.seed)
+    eval_loader = training_loader(LocalizationPatches(evaluation, cache), batch, args.workers, cuda, None)
     model = LocalizationUNet(pretrained=model_settings.get("encoder_weights") == "imagenet").to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=training["learning_rate"])
     scaler = torch.amp.GradScaler("cuda", enabled=amp, init_scale=1024.0)
@@ -224,7 +173,7 @@ def train_localization(args: Namespace) -> None:
     report = {
         "run_id": args.run_dir.name,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "git_commit": _git_commit(),
+        "git_commit": git_commit(),
         "torch": str(torch.__version__),
         "torchvision": str(torchvision.__version__),
         "cuda_build": torch.version.cuda,
@@ -260,7 +209,7 @@ def train_localization(args: Namespace) -> None:
 
     print(f"Train: {len(train)} patches | {report['evaluation_partition']}: {len(evaluation)} patches", flush=True)
     report["initial_evaluation"] = evaluate_localization(model, eval_loader, device, amp, thresholds)
-    _write_report(args.run_dir / "metrics.json", report)
+    write_run_report(args.run_dir / "metrics.json", report)
     best = -1.0
     for epoch in range(1, args.epochs + 1):
         if cuda:
@@ -292,7 +241,7 @@ def train_localization(args: Namespace) -> None:
                 "filename": path.name, "sha256": checkpoint_sha, "epoch": epoch, "metrics": result,
             }
         report["duration_seconds"] = perf_counter() - run_started
-        _write_report(args.run_dir / "metrics.json", report)
+        write_run_report(args.run_dir / "metrics.json", report)
         print(
             f"Epoch {epoch}/{args.epochs} | loss={stats['loss']:.4f} | "
             f"{report['evaluation_partition']} F1={result['f1']:.4f} @ {result['threshold']:.2f} | "
@@ -310,4 +259,4 @@ def train_localization(args: Namespace) -> None:
             raise RuntimeError("Exported validation masks differ from the selected checkpoint metrics")
         report["validation_masks"] = exported
         report["duration_seconds"] = perf_counter() - run_started
-        _write_report(args.run_dir / "metrics.json", report)
+        write_run_report(args.run_dir / "metrics.json", report)

@@ -6,7 +6,11 @@ model:
 
 training:
   crop_size: 160
-  batch_size: 4
+  batch_size: 8
+  context_padding: 0.25
+  min_visible_side: 2
+  learning_rate: 0.0002
+  amp: auto
   loss: weighted_cross_entropy
   class_weights:
     method: inverse_square_root_frequency

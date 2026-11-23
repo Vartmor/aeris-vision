@@ -1,10 +1,15 @@
 runtime:
   backend: pytorch
   device: cpu
+  amp: auto
 
 checkpoints:
-  localization: null  # Set after model selection.
-  damage: null
+  localization: outputs/localization/nov26-baseline/best.pt
+  damage: outputs/damage/nov28-class-cap/best.pt
+
+localization:
+  crop_size: 256
+  minimum_component_area: 32
 
 evaluation:
   match_iou_minimum: 0.5  # Inclusive.
